@@ -6,8 +6,6 @@ const app = express();
 const port = 3000;
 const resultLimit = process.env.RESULT_LIMIT || 25;
 
-console.log(resultLimit);
-
 // Connect to MongoDB
 mongoose.connect('mongodb://mongo:27017/amazon-scraping', {
     useNewUrlParser: true,
