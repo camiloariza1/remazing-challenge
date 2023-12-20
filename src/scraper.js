@@ -1,6 +1,6 @@
 const puppeteer = require('puppeteer');
 const mongoose = require('mongoose');
-const AmazonProduct = require('./models/AmazonProduct'); // Adjust the path as needed
+const AmazonProduct = require('./models/AmazonProduct');
 
 mongoose.connect('mongodb://mongo:27017/amazon-scraping', {
     useNewUrlParser: true,
@@ -15,7 +15,7 @@ async function scrapeAmazon(keyword) {
 
     const browser = await puppeteer.launch({
         args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });    
+    });
 
     for (let page = 1; page <= 3; page++) {
         const page = await browser.newPage();
@@ -53,7 +53,6 @@ async function scrapeAmazon(keyword) {
                 numberOfReviews: data.numberOfReviews,
                 url: data.url,
                 dateFirstListed: new Date() // This is a placeholder
-                // Add any other fields if necessary
             });
 
             await product.save();

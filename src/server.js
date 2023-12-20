@@ -1,6 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const AmazonProduct = require('./models/AmazonProduct'); // Adjust the path as needed
+const AmazonProduct = require('./models/AmazonProduct');
 const app = express();
 const port = 3000;
 const resultLimit = process.env.RESULT_LIMIT || 25;
