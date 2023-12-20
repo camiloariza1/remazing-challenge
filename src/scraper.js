@@ -2,61 +2,66 @@ const puppeteer = require('puppeteer');
 const mongoose = require('mongoose');
 const AmazonProduct = require('./models/AmazonProduct');
 
-mongoose.connect('mongodb://mongo:27017/amazon-scraping', {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-}).then(() => {
+mongoose.connect('mongodb://mongo:27017/amazon-scraping').then(() => {
     console.log('MongoDB Connected');
 }).catch(err => {
     console.error('MongoDB Connection Error:', err);
 });
 
 async function scrapeAmazon(keyword) {
-
     const browser = await puppeteer.launch({
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
 
-    for (let page = 1; page <= 3; page++) {
+    for (let pageNum = 1; pageNum <= 3; pageNum++) {
         const page = await browser.newPage();
-        const pageUrl = `https://www.amazon.com/s?k=${keyword}&page=${page}`;
+        const pageUrl = `https://www.amazon.com/s?k=${keyword}&page=${pageNum}`;
         await page.goto(pageUrl);
 
-        const productSelector = '.s-result-item';
-        await page.waitForSelector(productSelector);
+        const productLinksSelector = '.s-result-item h2 a';
+        await page.waitForSelector(productLinksSelector);
+        const productLinks = await page.$$eval(productLinksSelector, links => links.map(link => link.href));
 
-        let products = await page.$$eval(productSelector, items => {
-            return items.map(item => {
-                let title = item.querySelector('h2 a span')?.innerText || 'No title';
-                let price = item.querySelector('.a-price .a-offscreen')?.innerText || 'No price';
-                let numberOfReviews = item.querySelector('.a-size-small .a-link-normal')?.innerText;
-                numberOfReviews = numberOfReviews ? parseInt(numberOfReviews.replace(/[^\d]/g, '')) : 0;
-                let ratingText = item.querySelector('.a-icon-alt')?.innerText;
-                let url = item.querySelector('h2 a')?.href;
+        for (let link of productLinks) {
+            const productPage = await browser.newPage();
+            console.log('Navigating to:', link);
+            await productPage.goto(link);
 
-                let rating = null;
-                if (ratingText) {
-                    let ratingMatch = ratingText.match(/(\d+(\.\d+)?) out of 5 stars/);
-                    rating = ratingMatch ? parseFloat(ratingMatch[1]) : null;
+            // Add logic to scrape data from the product detail page
+            const title = await productPage.$eval('span#productTitle', el => el.innerText.trim());
+            const price = await productPage.$eval('#corePrice_feature_div > div:nth-child(1) > div:nth-child(1) > span:nth-child(1) > span:nth-child(1)', el => el.innerText.trim()).catch(() => 'No price');
+            const numberOfReviews = await productPage.$eval('#acrCustomerReviewText', el => parseInt(el.innerText.replace(/[^\d]/g, ''))).catch(() => 0);
+            const ratingText = await productPage.$eval('.a-icon-alt', el => el.innerText).catch(() => null);
+            let rating = null;
+            if (ratingText) {
+                const ratingMatch = ratingText.match(/(\d+(\.\d+)?)/);
+                rating = ratingMatch ? parseFloat(ratingMatch[0]) : null;
+            }
+            let dateFirstAvailableText = await productPage.$eval('#productDetails_detailBullets_sections1 > tbody:nth-child(1) > tr:nth-child(8) > td:nth-child(2)', el => el.innerText.trim()).catch(() => null);
+
+            let dateFirstAvailable = null;
+            if (dateFirstAvailableText) {
+                // Parse the date string (adjust format as needed)
+                dateFirstAvailable = new Date(dateFirstAvailableText);
+                if (isNaN(dateFirstAvailable.valueOf())) {
+                    // Handle invalid date
+                    dateFirstAvailable = null;
                 }
+            }
 
-                return { title, price, rating, numberOfReviews, url };
-            });
-        });
-
-        // Filter out undefined data and save to MongoDB
-        for (let data of products.filter(p => p.title && p.price && p.rating && p.numberOfReviews && p.url)) {
-            let product = new AmazonProduct({
-                title: data.title,
-                price: data.price,
-                averageRating: data.rating,
-                numberOfReviews: data.numberOfReviews,
-                url: data.url,
-                dateFirstListed: new Date() // This is a placeholder
+            const product = new AmazonProduct({
+                title,
+                price,
+                averageRating: rating,
+                numberOfReviews,
+                url: link,
+                dateFirstListed: new Date(dateFirstAvailable)
             });
 
             await product.save();
+            await productPage.close();
         }
+
         await page.close();
     }
 
