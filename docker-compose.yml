@@ -7,9 +7,9 @@ services:
       - "3000:3000"
     depends_on:
       - mongo
-  scraper:
+  app:
     build: .
-    command: node src/scraper.js
+    command: node src/app.js
     depends_on:
       - mongo
   mongo:

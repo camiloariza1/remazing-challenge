@@ -1,74 +1,96 @@
 const puppeteer = require('puppeteer');
-const mongoose = require('mongoose');
 const AmazonProduct = require('./models/AmazonProduct');
 
-mongoose.connect('mongodb://mongo:27017/amazon-scraping').then(() => {
-    console.log('MongoDB Connected');
-}).catch(err => {
-    console.error('MongoDB Connection Error:', err);
-});
+async function scrapeProductPage(browser, link) {
+    const productPage = await browser.newPage();
+
+    try {
+        console.log('Navigating to:', link);
+        await productPage.goto(link);
+
+        const title = await productPage.$eval('span#productTitle', el => el.innerText.trim()).catch(() => 'No title');
+        const priceSelector = '#corePrice_feature_div > div:nth-child(1) > div:nth-child(1) > span:nth-child(1) > span:nth-child(1)';
+        const price = await productPage.$eval(priceSelector, el => el.innerText.trim()).catch(() => 'No price');
+        const numberOfReviews = await productPage.$eval('#acrCustomerReviewText', el => parseInt(el.innerText.replace(/[^\d]/g, ''))).catch(() => 0);
+        const ratingText = await productPage.$eval('.a-icon-alt', el => el.innerText).catch(() => null);
+        let rating = ratingText ? parseFloat(ratingText.match(/(\d+(\.\d+)?)/)[0]) : null;
+
+        let dateFirstAvailable = await scrapeDateFirstAvailable(productPage);
+
+        const product = new AmazonProduct({
+            title,
+            price,
+            averageRating: rating,
+            numberOfReviews,
+            url: link,
+            dateFirstListed: dateFirstAvailable
+        });
+
+        await product.save();
+    } catch (error) {
+        console.error(`Error scraping product page ${link}:`, error);
+    } finally {
+        await productPage.close();
+    }
+}
+
+async function scrapeDateFirstAvailable(productPage) {
+    let dateFirstAvailableText = await productPage.$eval('#productDetails_detailBullets_sections1 > tbody:nth-child(1) > tr:nth-child(8) > td:nth-child(2)', el => el.innerText.trim()).catch(() => null);
+    if (!dateFirstAvailableText) return null;
+
+    let date = new Date(dateFirstAvailableText);
+    return isNaN(date.valueOf()) ? null : date;
+}
 
 async function scrapeAmazon(keyword) {
     const browser = await puppeteer.launch({
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox', 
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--disable-gpu'
+        ]
     });
 
-    for (let pageNum = 1; pageNum <= 3; pageNum++) {
-        const page = await browser.newPage();
-        const pageUrl = `https://www.amazon.com/s?k=${keyword}&page=${pageNum}`;
-        await page.goto(pageUrl);
+    try {
+        // Loop through the first 3 pages of Amazon search results
+        for (let pageNum = 1; pageNum <= 3; pageNum++) {
+            const page = await browser.newPage();
 
-        const productLinksSelector = '.s-result-item h2 a';
-        await page.waitForSelector(productLinksSelector);
-        const productLinks = await page.$$eval(productLinksSelector, links => links.map(link => link.href));
-
-        for (let link of productLinks) {
-            const productPage = await browser.newPage();
-            console.log('Navigating to:', link);
-            await productPage.goto(link);
-
-            // Add logic to scrape data from the product detail page
-            const title = await productPage.$eval('span#productTitle', el => el.innerText.trim());
-            const price = await productPage.$eval('#corePrice_feature_div > div:nth-child(1) > div:nth-child(1) > span:nth-child(1) > span:nth-child(1)', el => el.innerText.trim()).catch(() => 'No price');
-            const numberOfReviews = await productPage.$eval('#acrCustomerReviewText', el => parseInt(el.innerText.replace(/[^\d]/g, ''))).catch(() => 0);
-            const ratingText = await productPage.$eval('.a-icon-alt', el => el.innerText).catch(() => null);
-            let rating = null;
-            if (ratingText) {
-                const ratingMatch = ratingText.match(/(\d+(\.\d+)?)/);
-                rating = ratingMatch ? parseFloat(ratingMatch[0]) : null;
-            }
-            let dateFirstAvailableText = await productPage.$eval('#productDetails_detailBullets_sections1 > tbody:nth-child(1) > tr:nth-child(8) > td:nth-child(2)', el => el.innerText.trim()).catch(() => null);
-
-            let dateFirstAvailable = null;
-            if (dateFirstAvailableText) {
-                // Parse the date string (adjust format as needed)
-                dateFirstAvailable = new Date(dateFirstAvailableText);
-                if (isNaN(dateFirstAvailable.valueOf())) {
-                    // Handle invalid date
-                    dateFirstAvailable = null;
+            // Set up request interception to control which resources are loaded
+            await page.setRequestInterception(true);
+            page.on('request', (req) => {
+                if (['image', 'stylesheet', 'font'].includes(req.resourceType())) {
+                    req.abort();
+                } else {
+                    req.continue();
                 }
-            }
-
-            const product = new AmazonProduct({
-                title,
-                price,
-                averageRating: rating,
-                numberOfReviews,
-                url: link,
-                dateFirstListed: new Date(dateFirstAvailable)
             });
 
-            await product.save();
-            await productPage.close();
+            const pageUrl = `https://www.amazon.com/s?k=${keyword}&page=${pageNum}`;
+            await page.goto(pageUrl, { waitUntil: 'domcontentloaded' });
+
+            // Extract product links from the search result page
+            const productLinks = await page.$$eval('.s-result-item h2 a', links => links.map(link => link.href));
+            
+            // Close the current search result page to free up resources
+            await page.close();
+
+            // Process pages in parallel in batches
+            const parallelLimit = 3; // Adjust based on system capabilities
+            for (let i = 0; i < productLinks.length; i += parallelLimit) {
+                
+                 // Create promises for a batch of product pages and wait for them to complete
+                const promises = productLinks.slice(i, i + parallelLimit).map(link => scrapeProductPage(browser, link));
+                await Promise.all(promises);
+            }
         }
-
-        await page.close();
+    } catch (error) {
+        console.error(`Error scraping for keyword ${keyword}:`, error);
+    } finally {
+        await browser.close();
     }
-
-    await browser.close();
 }
 
-const keywords = ['laptop', 'book', 'camera', 'headphones', 'smartwatch'];
-const selectedKeyword = keywords[Math.floor(Math.random() * keywords.length)];
-
-scrapeAmazon(selectedKeyword);
+module.exports = scrapeAmazon;

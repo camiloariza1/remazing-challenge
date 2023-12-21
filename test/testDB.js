@@ -18,6 +18,7 @@ async function addTestProduct() {
             price: 19.99,
             numberOfReviews: 100,
             averageRating: 4.5,
+            numberOfReviews: 30000,
             dateFirstListed: new Date()
         });
 

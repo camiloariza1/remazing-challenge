@@ -19,6 +19,7 @@ mongoose.connect('mongodb://mongo:27017/amazon-scraping', {
 // API endpoint to get products
 app.get('/products', async (req, res) => {
     try {
+        // Fetch products from the database, sorted by title and limited by resultLimit
         const products = await AmazonProduct.find({}).sort({ title: 1 }).limit(resultLimit);
         res.json(products);
     } catch (err) {
@@ -27,7 +28,7 @@ app.get('/products', async (req, res) => {
     }
 });
 
-// Start the server
+// Start the Express server
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
