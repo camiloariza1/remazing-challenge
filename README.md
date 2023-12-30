@@ -4,6 +4,13 @@
 
 This application scrapes product data from Amazon using Puppeteer and stores the results in a MongoDB database. It also includes a Node.js server to retrieve and display the product information.
 
+### Technologies
+
+- Express for API calls
+- Mongoose for communicating and stablishing connection with MongoDB
+- Puppeteer for the web scraping on Amazon
+- Docker and docker-compose for building the app in a container for easy installation and running
+
 ## Prerequisites
 
 Before running the application, make sure you have the following installed:
