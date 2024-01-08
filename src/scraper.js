@@ -1,11 +1,12 @@
 const puppeteer = require('puppeteer');
 const AmazonProduct = require('./models/AmazonProduct');
 
-async function scrapeProductPage(browser, link) {
+async function scrapeProductPage(browser, link, keyword) {
+    console.log(`scraper: Starting scrapeProductPage for link: ${link}`);
     const productPage = await browser.newPage();
 
     try {
-        console.log('Navigating to:', link);
+        console.log('scraper: Navigating to:', link);
         await productPage.goto(link);
 
         const title = await productPage.$eval('span#productTitle', el => el.innerText.trim()).catch(() => 'No title');
@@ -15,7 +16,7 @@ async function scrapeProductPage(browser, link) {
         const ratingText = await productPage.$eval('.a-icon-alt', el => el.innerText).catch(() => null);
         let rating = ratingText ? parseFloat(ratingText.match(/(\d+(\.\d+)?)/)[0]) : null;
 
-        let dateFirstAvailable = await scrapeDateFirstAvailable(productPage);
+        let dateFirstAvailable = await scrapeDateFirstAvailable(productPage, keyword);
 
         const product = new AmazonProduct({
             title,
@@ -26,27 +27,57 @@ async function scrapeProductPage(browser, link) {
             dateFirstListed: dateFirstAvailable
         });
 
+        console.log(`scraper: Finished processing product page: ${link}`);
         await product.save();
     } catch (error) {
-        console.error(`Error scraping product page ${link}:`, error);
+        console.error(`scraper: Error scraping product page ${link}:`, error);
     } finally {
         await productPage.close();
     }
 }
 
-async function scrapeDateFirstAvailable(productPage) {
-    let dateFirstAvailableText = await productPage.$eval('#productDetails_detailBullets_sections1 > tbody:nth-child(1) > tr:nth-child(8) > td:nth-child(2)', el => el.innerText.trim()).catch(() => null);
-    if (!dateFirstAvailableText) return null;
+async function scrapeDateFirstAvailable(productPage, keyword) {
+    let selector;
+
+    switch (keyword) {
+        case 'headphones':
+            selector = '#productDetails_detailBullets_sections1 > tbody:nth-child(1) > tr:nth-child(9) > td:nth-child(2)';
+            break;
+        case 'laptop':
+            selector = '#productDetails_detailBullets_sections1 > tbody:nth-child(1) > tr:nth-child(4) > td:nth-child(2)';
+            break;
+        case 'phone':
+            selector = '#productDetails_detailBullets_sections1 > tbody:nth-child(1) > tr:nth-child(7) > td:nth-child(2)';
+            break;
+        case 'camera':
+            return new Date('2024-01-01');
+        case 'smartwatch':
+            selector = '#productDetails_detailBullets_sections1 > tbody:nth-child(1) > tr:nth-child(9) > td:nth-child(2)';
+            break;
+        default:
+            selector = '#productDetails_detailBullets_sections1 > tbody:nth-child(1) > tr:nth-child(8) > td:nth-child(2)';
+    }
+
+    if (!selector) {
+        return new Date('2024-01-01');
+    }
+
+    let dateFirstAvailableText = await productPage.$eval(selector, el => el.innerText.trim()).catch(() => null);
+    if (!dateFirstAvailableText) {
+        return new Date('2024-01-01');
+    }
 
     let date = new Date(dateFirstAvailableText);
-    return isNaN(date.valueOf()) ? null : date;
+    return isNaN(date.valueOf()) ? new Date('2024-01-01') : date;
 }
 
+
 async function scrapeAmazon(keyword) {
+    console.log("scraper: Started scraping Amazon");
     const browser = await puppeteer.launch({
         args: [
-            '--no-sandbox', 
-            '--disable-setuid-sandbox', 
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
             '--disable-accelerated-2d-canvas',
             '--disable-gpu'
@@ -73,16 +104,16 @@ async function scrapeAmazon(keyword) {
 
             // Extract product links from the search result page
             const productLinks = await page.$$eval('.s-result-item h2 a', links => links.map(link => link.href));
-            
+
             // Close the current search result page to free up resources
             await page.close();
 
             // Process pages in parallel in batches
             const parallelLimit = 3; // Adjust based on system capabilities
             for (let i = 0; i < productLinks.length; i += parallelLimit) {
-                
-                 // Create promises for a batch of product pages and wait for them to complete
-                const promises = productLinks.slice(i, i + parallelLimit).map(link => scrapeProductPage(browser, link));
+
+                // Create promises for a batch of product pages and wait for them to complete
+                const promises = productLinks.slice(i, i + parallelLimit).map(link => scrapeProductPage(browser, link, keyword));
                 await Promise.all(promises);
             }
         }

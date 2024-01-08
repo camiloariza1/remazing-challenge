@@ -11,9 +11,9 @@ mongoose.connect('mongodb://mongo:27017/amazon-scraping', {
     useNewUrlParser: true,
     useUnifiedTopology: true
 }).then(() => {
-    console.log('MongoDB Connected');
+    console.log('server: MongoDB Connected');
 }).catch(err => {
-    console.error('MongoDB Connection Error:', err);
+    console.error('server: MongoDB Connection Error:', err);
 });
 
 // API endpoint to get products
