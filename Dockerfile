@@ -12,11 +12,14 @@ RUN apt-get update \
 # Copy package.json and package-lock.json
 COPY package*.json ./
 
-# Install any needed packages
-RUN npm install
+# Install dependencies using npm ci
+RUN npm ci
 
-# Bundle app source inside the Docker image
+# Copy the rest of your app's source code
 COPY . .
+
+# Compile TypeScript to JavaScript
+RUN ./node_modules/.bin/tsc
 
 # Expose port 3000 for the server
 EXPOSE 3000

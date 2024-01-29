@@ -12,7 +12,7 @@ services:
   app:
     image: remazing-challenge
     build: .
-    command: node src/app.js
+    command: node dist/app.js
     depends_on:
       - mongo
     restart: unless-stopped
@@ -20,7 +20,7 @@ services:
   server:
     image: remazing-challenge
     build: .
-    command: node src/server.js
+    command: node dist/server.js
     ports:
       - "3000:3000"
     depends_on:

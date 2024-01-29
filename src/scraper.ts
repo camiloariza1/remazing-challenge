@@ -1,22 +1,22 @@
-const puppeteer = require('puppeteer');
-const AmazonProduct = require('./models/AmazonProduct');
+import puppeteer, { Browser, Page } from 'puppeteer';
+import AmazonProduct from './models/AmazonProduct';
 
-async function scrapeProductPage(browser, link, keyword) {
+async function scrapeProductPage(browser: Browser, link: string, keyword: string): Promise<void> {
     console.log(`scraper: Starting scrapeProductPage for link: ${link}`);
-    const productPage = await browser.newPage();
+    const productPage: Page = await browser.newPage();
 
     try {
         console.log('scraper: Navigating to:', link);
         await productPage.goto(link);
 
-        const title = await productPage.$eval('span#productTitle', el => el.innerText.trim()).catch(() => 'No title');
+        const title: string = await productPage.$eval('span#productTitle', el => el.textContent?.trim() || 'No title');
         const priceSelector = '#corePrice_feature_div > div:nth-child(1) > div:nth-child(1) > span:nth-child(1) > span:nth-child(1)';
-        const price = await productPage.$eval(priceSelector, el => el.innerText.trim()).catch(() => 'No price');
-        const numberOfReviews = await productPage.$eval('#acrCustomerReviewText', el => parseInt(el.innerText.replace(/[^\d]/g, ''))).catch(() => 0);
-        const ratingText = await productPage.$eval('.a-icon-alt', el => el.innerText).catch(() => null);
-        let rating = ratingText ? parseFloat(ratingText.match(/(\d+(\.\d+)?)/)[0]) : null;
+        const price: string = await productPage.$eval(priceSelector, el => el.textContent?.trim() || 'No price');
+        const numberOfReviews: number = await productPage.$eval('#acrCustomerReviewText', el => parseInt(el.textContent?.replace(/[^\d]/g, '') || '0'));
+        const ratingText: string | null = await productPage.$eval('.a-icon-alt', el => el.textContent);
+        let rating: number | null = ratingText ? parseFloat(ratingText.match(/(\d+(\.\d+)?)/)?.[0] || '0') : null;
 
-        let dateFirstAvailable = await scrapeDateFirstAvailable(productPage, keyword);
+        let dateFirstAvailable: Date = await scrapeDateFirstAvailable(productPage, keyword);
 
         const product = new AmazonProduct({
             title,
@@ -36,7 +36,7 @@ async function scrapeProductPage(browser, link, keyword) {
     }
 }
 
-async function scrapeDateFirstAvailable(productPage, keyword) {
+async function scrapeDateFirstAvailable(productPage: Page, keyword: string): Promise<Date> {
     let selector;
 
     switch (keyword) {
@@ -62,7 +62,7 @@ async function scrapeDateFirstAvailable(productPage, keyword) {
         return new Date('2024-01-01');
     }
 
-    let dateFirstAvailableText = await productPage.$eval(selector, el => el.innerText.trim()).catch(() => null);
+    let dateFirstAvailableText = await productPage.$eval(selector, (el: Element) => (el as HTMLElement).innerText.trim()).catch(() => null);
     if (!dateFirstAvailableText) {
         return new Date('2024-01-01');
     }
@@ -72,7 +72,7 @@ async function scrapeDateFirstAvailable(productPage, keyword) {
 }
 
 
-async function scrapeAmazon(keyword) {
+async function scrapeAmazon(keyword: string): Promise<void> {
     console.log("scraper: Started scraping Amazon");
     const browser = await puppeteer.launch({
         args: [
@@ -124,4 +124,4 @@ async function scrapeAmazon(keyword) {
     }
 }
 
-module.exports = scrapeAmazon;
+export default scrapeAmazon
